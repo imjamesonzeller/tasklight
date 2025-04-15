@@ -3,6 +3,7 @@ package main
 import (
 	"bytes"
 	"context"
+	_ "embed"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,13 +29,42 @@ func NewApp() *App {
 	return &App{}
 }
 
+//go:embed .env
+var envContent string
+
+type Config struct {
+	NotionDBID   string
+	NotionSecret string
+	OpenAIAPIKey string
+}
+
+var AppConfig Config
+
 func (a *App) startup(ctx context.Context) {
 	a.ctx = ctx
 	a.isVisible = true
 
-	err := godotenv.Load()
+	//err := godotenv.Load()
+	//if err != nil {
+	//	log.Fatal("Error loading .env file")
+	//}
+
+	envMap, err := godotenv.Unmarshal(envContent)
 	if err != nil {
-		log.Fatal("Error loading .env file")
+		log.Println("Error loading embedded .env:", err)
+		return
+	}
+
+	for k, v := range envMap {
+		if err := os.Setenv(k, v); err != nil {
+			log.Printf("Could not set %s: %v", k, err)
+		}
+	}
+
+	AppConfig = Config{
+		NotionDBID:   os.Getenv("NOTION_DB_ID"),
+		NotionSecret: os.Getenv("NOTION_SECRET"),
+		OpenAIAPIKey: os.Getenv("OPENAI_API_KEY"),
 	}
 
 	go func() {
@@ -53,10 +83,6 @@ type TaskInformation struct {
 }
 
 func SendNotionAPIRequest(taskInformation TaskInformation) string {
-	// Load in secrets
-	dbID := os.Getenv("DB_ID")
-	apiSecret := os.Getenv("NOTION_SECRET")
-
 	// Request Body with Boilerplate and filled in information
 	// Build the "Name" property
 	nameProp := map[string]interface{}{
@@ -91,7 +117,7 @@ func SendNotionAPIRequest(taskInformation TaskInformation) string {
 	postBody := map[string]interface{}{
 		"parent": map[string]string{
 			"type":        "database_id",
-			"database_id": dbID,
+			"database_id": AppConfig.NotionDBID,
 		},
 		"properties": properties,
 	}
@@ -105,7 +131,7 @@ func SendNotionAPIRequest(taskInformation TaskInformation) string {
 
 	// Request Details
 	url := "https://api.notion.com/v1/pages"
-	authorization := "Bearer " + apiSecret
+	authorization := "Bearer " + AppConfig.NotionSecret
 	fmt.Println(authorization)
 
 	req, err := http.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
@@ -136,7 +162,7 @@ func SendNotionAPIRequest(taskInformation TaskInformation) string {
 func ProcessedMessageFromAI(input string) TaskInformation {
 	// TODO: Add handling of No API key and failure of OpenAI request so it just sends input back.
 
-	client := openai.NewClient(option.WithAPIKey(os.Getenv("OPENAI_API_KEY")))
+	client := openai.NewClient(option.WithAPIKey(AppConfig.OpenAIAPIKey))
 
 	today := time.Now().Format("2006-01-02") // ISO 8601 format
 	prompt := fmt.Sprintf(`You are a helpful task parsing assistant. Your job is to parse natural language
@@ -207,12 +233,12 @@ func (a *App) RegisterHotKey() {
 }
 
 func (a *App) ToggleVisibility() {
-	a.isVisible = !a.isVisible
-
 	if a.isVisible {
+		wruntime.Hide(a.ctx)
+	} else {
 		wruntime.WindowShow(a.ctx)
 		wruntime.WindowSetAlwaysOnTop(a.ctx, true)
-	} else {
-		wruntime.WindowHide(a.ctx)
 	}
+
+	a.isVisible = !a.isVisible
 }

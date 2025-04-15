@@ -11,9 +11,6 @@ function App() {
     // Update the name state
     const updateName = (e) => setName(e.target.value);
 
-    // Update result text after greeting
-    const updateResultText = (result) => setResultText(result);
-
     // Process the message when Enter is pressed
     const handleKeyDown = (e) => {
         if (e.key === "Enter") {
@@ -21,7 +18,9 @@ function App() {
         }
 
         if (e.key === "Escape") {
+            e.preventDefault(); // <-- No more bonk sounds
             ToggleVisibility();
+            setName(""); // <-- clears input field
         }
     };
 
@@ -43,18 +42,20 @@ function App() {
 
     // Listen for app focus events and focus the input field
     useEffect(() => {
-        EventsOn("wails:focus", () => {
+        const focusInput = () => {
             if (inputRef.current) {
-                inputRef.current.focus(); // Ensure the input field gets focused
-                setResultText("") // Reset's result text upon new focus
+                inputRef.current.focus();
+                setResultText("");
             }
-        });
-    }, []);
+        };
 
-    useEffect(() => {
-        if (inputRef.current) {
-            inputRef.current.focus(); // Focus input on load
-        }
+        setTimeout(() => {
+            if (document.hasFocus()) {
+                focusInput();
+            }
+        }, 50);
+
+        EventsOn("wails:focus", focusInput);
     }, []);
 
     // Listen for backend error events
